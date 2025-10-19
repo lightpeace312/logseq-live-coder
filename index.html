@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Shader Editor</title>
+  <style>
+    #app{
+      width:100%;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;width:100%;
+    }
+
+    
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="app"></div>
+  </div>
+
+  <script>
+    // 配置 Monaco Editor 的 Web Workers
+    // var require = {
+    //   paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs' },
+    //   'vs/nls': {
+    //     availableLanguages: {
+    //       '*': 'zh-cn' // 设置语言为中文
+    //     }
+    //   }
+    // };
+    
+    // 设置 Monaco 环境变量
+    // window.MonacoEnvironment = {
+    //   getWorkerUrl: function (workerId, label) {
+    //     if (label === 'typescript' || label === 'javascript') {
+    //       return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/base/worker/workerMain.js';
+    //     }
+    //     return 'https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/base/worker/workerMain.js';
+    //   }
+    // };
+  </script>
+  
+  <!-- 引入 Monaco Editor -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/loader.js"></script> -->
+  
+  <!-- <script src="./main.js" type="module"></script> -->
+  <script src="./index.js" type="module"></script>
+  <script src="./preview.js" type="module"></script>
+</body>
+</html>
