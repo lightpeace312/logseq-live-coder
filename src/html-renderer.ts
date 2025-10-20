@@ -1,4 +1,3 @@
-import { defaultHTML, defaultCSS, defaultJS } from './constants';
 
 // 更新HTML预览
 export function updateHTMLPreview(editors: any, container: HTMLElement) {

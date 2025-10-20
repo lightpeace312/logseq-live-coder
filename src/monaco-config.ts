@@ -10,6 +10,7 @@ import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 if (typeof window !== 'undefined') {
   self.MonacoEnvironment = {
     getWorker: function (workerId, label) {
+      debugger
       // 根据语言标签返回相应的worker
       switch (label) {
         case 'typescript':
