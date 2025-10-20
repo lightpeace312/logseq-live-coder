@@ -2,7 +2,7 @@
 import { defaultFragmentShader, defaultVertexShader, defaultHTML, defaultCSS, defaultJS } from './src/constants';
 import { initWebGL, createShader, createProgram, showShaderError, hideShaderError, render, compileAndDisplay } from './src/shader-renderer';
 import { updateHTMLPreview } from './src/html-renderer';
-import { initMonacoEditors ,setupTabSwitching, setupCodeTypeSwitching } from './src/editor-manager';
+import { initMonacoEditors ,setupTabSwitching, setupCodeTypeSwitching, saveEditorContent } from './src/editor-manager';
 import { initMonaco } from './src/monaco-config';
 import '@logseq/libs'
 // WebGL上下文和程序
@@ -10,6 +10,7 @@ let gl = null;
 let program = null;
 let lastRenderTime = 0;
 let animationFrameId = null;
+let saveTimeout = null;
 
 // 启动着色器动画循环
 function startAnimationLoop(canvas, shaders) {
@@ -43,6 +44,9 @@ export function initShaderEditor(container) {
         vertex: defaultVertexShader,
         fragment: defaultFragmentShader
     };
+    
+    // 获取UUID用于保存内容
+    const uuid = container.getAttribute('data-uuid');
     
     let activeTab = 'fragment';
     let codeType = 'shader';
@@ -95,6 +99,7 @@ export function initShaderEditor(container) {
     if (editors.css) editors.css.setValue(defaultCSS);
     if (editors.js) editors.js.setValue(defaultJS);
     
+    // 设置内容变化监听器以保存内容
     Object.keys(editors).forEach(type => {
         if (type.startsWith('_')) return;
         
@@ -106,6 +111,14 @@ export function initShaderEditor(container) {
                 } else {
                     updateHTMLPreview(editors, container);
                 }
+                
+                // 防抖保存，避免过于频繁的保存操作
+                if (saveTimeout) clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(() => {
+                    if (uuid) {
+                        saveEditorContent(uuid, editors);
+                    }
+                }, 2000); // 2秒后保存
             });
         }
     });

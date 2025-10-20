@@ -2,9 +2,6 @@ import '@logseq/libs'
 import { defaultFragmentShader } from './src/constants';
 import { getTemplate,getStyle } from './src/template';
 import {initShaderEditor} from './main'
-// 尝试导入logseq模块，如果失败则使用全局变量
-
-
 /**
  * 检查是否在Logseq环境中运行
  * @returns {boolean}
@@ -51,6 +48,13 @@ async function initPlugin() {
     // 创建唯一标识符
     const uuid = payload.uuid;
     logseq.provideStyle({key:'logseq-live-coder-style',style:getStyle()});
+    
+    // 确保样式正确应用
+    const style = document.createElement('style');
+    style.id = 'live-coder-styles';
+    style.textContent = getStyle();
+    document.head.appendChild(style);
+    
     logseq.provideUI({
       key: `live-coder-block-${uuid}`,
       slot,

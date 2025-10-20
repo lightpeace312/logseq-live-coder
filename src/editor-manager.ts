@@ -1,6 +1,11 @@
+/// <reference path="../global.d.ts" />
+
 import { defaultFragmentShader, defaultVertexShader, defaultHTML, defaultCSS, defaultJS } from './constants';
 
 import monaco from './monaco-config';
+
+// 声明logseq变量以解决TypeScript编译错误
+declare const logseq: any;
 
 // 初始化 Monaco Editor
 export function initMonacoEditors(container: HTMLElement) {
@@ -279,4 +284,78 @@ export function setupCodeTypeSwitching(container: HTMLElement, editors: any, onC
         const newType = target.value;
         onCodeTypeChange(newType, editors);
     });
+}
+
+// 获取编辑器内容
+export function getEditorContent(editors: any) {
+    const content: any = {};
+    
+    // 获取着色器内容
+    if (editors.fragment || editors.vertex) {
+        content.shader = {
+            fragment: editors.fragment ? editors.fragment.getValue() : '',
+            vertex: editors.vertex ? editors.vertex.getValue() : ''
+        };
+    }
+    
+    // 获取HTML内容
+    if (editors.html || editors.css || editors.js) {
+        content.html = {
+            html: editors.html ? editors.html.getValue() : '',
+            css: editors.css ? editors.css.getValue() : '',
+            js: editors.js ? editors.js.getValue() : ''
+        };
+    }
+    
+    return JSON.stringify(content);
+}
+
+// 保存编辑器内容到Logseq块
+export async function saveEditorContent(uuid: string, editors: any) {
+    if (typeof logseq !== 'undefined') {
+        try {
+            const content = getEditorContent(editors);
+            // 将内容保存到块属性中
+            await logseq.Editor.upsertBlockProperty(uuid, 'liveCoderContent', content);
+        } catch (error) {
+            console.error('Failed to save editor content:', error);
+        }
+    }
+}
+
+// 从Logseq块加载编辑器内容
+export async function loadEditorContent(uuid: string, editors: any) {
+    if (typeof logseq !== 'undefined') {
+        try {
+            const block = await logseq.Editor.getBlock(uuid);
+            if (block && block.properties && block.properties.liveCoderContent) {
+                const content = block.properties.liveCoderContent;
+                
+                // 加载着色器内容
+                if (content.shader) {
+                    if (editors.fragment && content.shader.fragment) {
+                        editors.fragment.setValue(content.shader.fragment);
+                    }
+                    if (editors.vertex && content.shader.vertex) {
+                        editors.vertex.setValue(content.shader.vertex);
+                    }
+                }
+                
+                // 加载HTML内容
+                if (content.html) {
+                    if (editors.html && content.html.html) {
+                        editors.html.setValue(content.html.html);
+                    }
+                    if (editors.css && content.html.css) {
+                        editors.css.setValue(content.html.css);
+                    }
+                    if (editors.js && content.html.js) {
+                        editors.js.setValue(content.html.js);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load editor content:', error);
+        }
+    }
 }

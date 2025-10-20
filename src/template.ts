@@ -1,9 +1,10 @@
+import nonacoStyle from './monaco.css?raw'
 export function getTemplate(uuid: string, defaultFragmentShader: string) {
   return `
         <div class="live-shader-container" data-uuid="${uuid}">
           <div class="live-shader-editor-wrapper">
             <div class="panel-header">
-              代码
+            <span>代码</span>
                <select class="code-type-selector" data-id="${uuid}">
                 <option value="shader">Shader</option>
                 <option value="html">HTML</option>
@@ -19,10 +20,7 @@ export function getTemplate(uuid: string, defaultFragmentShader: string) {
                 <div class="tab" data-tab="css">CSS</div>
                 <div class="tab" data-tab="js">JavaScript</div>
               </div>
-             
             </div>
-           
-            
             <!-- Shader 模式编辑器 -->
             <textarea class="live-shader-editor" data-type="fragment" data-id="${uuid}">${defaultFragmentShader}</textarea>
             <textarea class="live-shader-editor" data-type="vertex" data-id="${uuid}" style="display: none;"></textarea>
@@ -34,7 +32,7 @@ export function getTemplate(uuid: string, defaultFragmentShader: string) {
           <div class="live-shader-preview-wrapper">
             <div class="panel-header">预览</div>
             <div class="panel-content">
-              <canvas class="live-shader-canvas" width="384" height="384" data-id="${uuid}"></canvas>
+              <canvas class="live-shader-canvas" width="320" height="320" data-id="${uuid}"></canvas>
               <iframe class="live-html-preview" data-id="${uuid}" style="display: none;"></iframe>
             </div>
             <div class="live-shader-error" data-id="${uuid}"></div>
@@ -45,15 +43,35 @@ export function getTemplate(uuid: string, defaultFragmentShader: string) {
 
 export function getStyle(){
   return `
+
+     ${nonacoStyle}
+
+     .live-shader-container {
+      border-radius:8px;overflow:hidden;
+        display: flex;
+        height: 400px;
+        width: 100%;
+        position: relative;
+        resize:vertical;
+    }
+      .live-shader-container::after{
+      position:absolute;
+      content:"";width:0px;height:0;bottom:0;right:0;
+      border-right:15px solid #5e5e5e;
+      border-left:15px solid transparent;
+      border-top:15px solid transparent;
+      border-bottom:15px solid #5e5e5e;
+      }
     .live-shader-container .panel-header {
+    white-space: nowrap;
       line-height:1em;
       padding:0px 12px ;
-
       color:#808080;
-      height:28px;
-      background-color: #242424;
+      height:32px;
+      background-color: #080808;
       border-bottom: 1px solid #4f4f4f;
       display: flex;
+      flex:none;
       gap:18px;
       /* justify-content: space-between; */
       align-items: center;
@@ -72,19 +90,36 @@ export function getStyle(){
 
     /* 标签页样式 */
     .live-shader-container .tabs {
-      display: flex;align-items: center;
-      height:100%;font-size:14px;
+      display: flex;
+      align-items: center;
+      height:100%;
+      font-size:14px;
       border-left: 1px solid #404040;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+    }
 
+    .live-shader-container .tabs::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .live-shader-container .tabs::-webkit-scrollbar-thumb {
+      background-color: #555;
+      border-radius: 2px;
     }
 
     .live-shader-container .tab {
-      height:100%;padding:0px 12px;
+      height:100%;
+      padding:0px 12px;
       cursor: pointer;
       border-right: 1px solid #404040;
       background-color: #2a2a2a;
       color:#999;
-      display:flex;align-items: center;
+      display:flex;
+      align-items: center;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .live-shader-container .tab.active {
@@ -102,12 +137,7 @@ export function getStyle(){
       outline: none;
     }
 
-    .live-shader-container {
-      display: flex;
-      height: 500px;
-      width: 100%;
-      position: relative;
-    }
+ 
 
     .live-shader-editor-wrapper {
       flex: 1;
