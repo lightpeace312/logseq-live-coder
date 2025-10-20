@@ -27,7 +27,6 @@ if (typeof window !== 'undefined') {
     }
   };
 }
-console.log('Monaco Env',self.MonacoEnvironment)
 
 // import { defaultFragmentShader, defaultVertexShader } from './constants';
 

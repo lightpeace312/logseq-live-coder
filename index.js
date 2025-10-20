@@ -1,14 +1,14 @@
 import '@logseq/libs'
 import { defaultFragmentShader } from './src/constants';
-import { getTemplate,getStyle } from './src/template';
-import {initShaderEditor} from './main'
+import { getTemplate } from './src/template';
+import { initShaderEditor } from './main';
+
 /**
  * 检查是否在Logseq环境中运行
  * @returns {boolean}
  */
 function isLogseqEnvironment() {
-  return import.meta.env.PROD
-  
+  return typeof logseq !== 'undefined';
 }
 
 /**
@@ -20,10 +20,10 @@ function isBrowserEnvironment() {
 }
 
 /**
- * 初始化插件功能
+ * 初始化插件功能 - iframe模式
  */
 async function initPlugin() {
-  console.log('Live Coder loaded');
+  console.log('Live Coder loaded in iframe mode');
 
   if (!logseq) {
     console.error('Logseq instance is not available');
@@ -47,33 +47,74 @@ async function initPlugin() {
 
     // 创建唯一标识符
     const uuid = payload.uuid;
-    logseq.provideStyle({key:'logseq-live-coder-style',style:getStyle()});
     
-    // 确保样式正确应用
-    const style = document.createElement('style');
-    style.id = 'live-coder-styles';
-    style.textContent = getStyle();
-    document.head.appendChild(style);
-    
+    // 在iframe模式下，我们需要创建一个iframe来容纳我们的应用
     logseq.provideUI({
       key: `live-coder-block-${uuid}`,
       slot,
       reset: true,
-      template: getTemplate(uuid, defaultFragmentShader),
-    });
+      template: `
+          <iframe src="${window.location.origin}${window.location.pathname}" 
+          style="min-width: 768px; min-height: 400px; border: none;margin:0 !important;resize:both;" 
+          data-uuid="${uuid}"
+          id="live-coder-iframe-${uuid}">
+          </iframe>
+          `,
+        });
+        // src="${logseq.base.getAssetsRoot()}/timestamp-plugin-iframe/index.html"
 
-    // 等待 UI 更新后再初始化
+    // 向iframe发送初始化消息
     setTimeout(() => {
-      try {
-        const container = parent.document.querySelector(`[data-uuid="${uuid}"]`) ;
-        if (container) {
-          initShaderEditor(container);
-        }
-      } catch (e) {
-        console.error('Failed to initialize editor:', e);
+      const iframe = parent.document.querySelector(`#live-coder-iframe-${uuid}`);
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'INIT_LIVE_CODER',
+          uuid: uuid,
+          data: defaultFragmentShader
+        }, '*');
       }
-    }, 100);
+    }, 500);
   });
+}
+
+/**
+ * 初始化iframe内的应用
+ */
+function initIframeApp() {
+  console.log('Initializing iframe app');
+  
+  // 监听来自父窗口的消息
+  window.addEventListener('message', async (event) => {
+    if (event.data && event.data.type === 'INIT_LIVE_CODER') {
+      const { uuid, data } = event.data;
+      
+      // 初始化应用
+      const app = document.getElementById('app');
+      if (app) {
+        // 注入样式
+        
+        // 设置内容
+        app.innerHTML = getTemplate(uuid, data || defaultFragmentShader);
+        
+        // 初始化编辑器
+        const container = document.querySelector('.live-shader-container');
+        if (container) {
+          setTimeout(() => {
+            try {
+              initShaderEditor(container);
+            } catch (e) {
+              console.error('Failed to initialize editor:', e);
+            }
+          }, 100);
+        }
+      }
+    }
+  });
+
+  // 如果是直接访问（独立模式）
+  if (window.location === window.parent.location) {
+    initStandaloneMode();
+  }
 }
 
 /**
@@ -94,6 +135,8 @@ function initStandaloneMode() {
     if (app) {
       // 模拟 uuid
       const uuid = 'standalone';
+      // 注入样式
+      
       app.innerHTML = getTemplate(uuid, defaultFragmentShader);
       
       const container = document.querySelector('.live-shader-container');
@@ -118,21 +161,15 @@ async function main() {
   if (isLogseqEnvironment()) {
     // 在Logseq环境中运行
     await initPlugin();
-  } else  {
-    // 在浏览器环境中运行（开发预览）
-    initStandaloneMode();
-  } 
+  } else {
+    // 在iframe或浏览器环境中运行
+    initIframeApp();
+  }
 }
 
 // 根据环境选择启动方式
 if (isLogseqEnvironment()) {
   logseq.ready(main).catch(console.error);
 } else {
-  // 浏览器环境
   main().catch(console.error);
-  document.addEventListener('DOMContentLoaded', ()=>{
-    console.log('dom style')
-    // 创建一个style标签插入 getStyle()的样式
-    document.head.insertAdjacentHTML('beforeend', `<style>${getStyle()}</style>`);
-  });
 }

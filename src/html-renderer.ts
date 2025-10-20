@@ -22,11 +22,17 @@ export function updateHTMLPreview(editors: any, container: HTMLElement) {
 </html>
     `;
     
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (iframeDoc) {
-        iframeDoc.open();
-        iframeDoc.write(fullHTML);
-        iframeDoc.close();
+    // 在iframe模式下，我们需要确保iframe内容正确更新
+    try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc) {
+            iframeDoc.open();
+            iframeDoc.write(fullHTML);
+            iframeDoc.close();
+        }
+    } catch (e) {
+        // 如果由于跨域问题无法直接写入iframe，使用srcdoc属性
+        console.warn('无法直接写入iframe内容，尝试使用srcdoc属性', e);
+        iframe.srcdoc = fullHTML;
     }
 }
-

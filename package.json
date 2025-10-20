@@ -9,7 +9,7 @@
     "id": "logseq-live-coder",
     "title": "Live Coder",
     "icon": "./icon.png",
-    "mode": "frontend"
+    "mode": "iframe"
   },
   "scripts": {
     "dev": "vite",
@@ -29,9 +29,6 @@
   "exports": {
     ".": {
       "import": "./dist/index.html"
-    },
-    "./monaco-editor/min/vs/editor/editor.main.css": {
-      "import": "./node_modules/monaco-editor/min/vs/editor/editor.main.css"
     }
   }
 }
