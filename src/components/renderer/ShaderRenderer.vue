@@ -1,5 +1,5 @@
 <template>
-  <canvas ref="canvasRef" class="h-[320px] min-w-[320px]"></canvas>
+  <canvas ref="canvasRef" class="w-full h-full"></canvas>
 </template>
 
 <script setup lang="ts">
@@ -19,7 +19,7 @@ let gl: WebGLRenderingContext | null = null
 let program: WebGLProgram | null = null
 let animationId: number | null = null
 let lastRenderTime = 0
-let needsUpdate = false
+let needsUpdate = true // 默认需要更新
 let positionBuffer: WebGLBuffer | null = null
 
 // 初始化WebGL
@@ -27,7 +27,12 @@ const initWebGL = () => {
   if (!canvasRef.value) return
   
   const canvas = canvasRef.value
-  gl = canvas.getContext('webgl') 
+  // 设置canvas的宽度和高度
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width
+  canvas.height = rect.height
+  
+  gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null
   
   if (!gl) {
     const errorMsg = 'Unable to initialize WebGL'
@@ -67,17 +72,20 @@ const initBuffers = () => {
 
 // 创建着色器
 const createShader = (type: number, source: string) => {
-  if (!gl) return null
+  if (!gl) {
+    return null
+  }
   
   const shader = gl.createShader(type)
-  if (!shader) return null
+  if (!shader) {
+    return null
+  }
   
   gl.shaderSource(shader, source)
   gl.compileShader(shader)
   
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const errorMsg = `Shader compile error: ${gl.getShaderInfoLog(shader)}`
-    console.error(errorMsg)
+    const errorMsg = `ERROR: ${gl.getShaderInfoLog(shader)}`
     emit('error', errorMsg)
     gl.deleteShader(shader)
     return null
@@ -88,18 +96,21 @@ const createShader = (type: number, source: string) => {
 
 // 创建着色器程序
 const createProgram = (vertexShader: WebGLShader | null, fragmentShader: WebGLShader | null) => {
-  if (!gl || !vertexShader || !fragmentShader) return null
+  if (!gl || !vertexShader || !fragmentShader) {
+    return null
+  }
   
   const program = gl.createProgram()
-  if (!program) return null
+  if (!program) {
+    return null
+  }
   
   gl.attachShader(program, vertexShader)
   gl.attachShader(program, fragmentShader)
   gl.linkProgram(program)
   
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const errorMsg = `Program link error: ${gl.getProgramInfoLog(program)}`
-    console.error(errorMsg)
+    const errorMsg = `ERROR: ${gl.getProgramInfoLog(program)}`
     emit('error', errorMsg)
     gl.deleteProgram(program)
     return null
@@ -110,7 +121,9 @@ const createProgram = (vertexShader: WebGLShader | null, fragmentShader: WebGLSh
 
 // 编译和显示着色器
 const compileAndDisplay = () => {
-  if (!gl) return
+  if (!gl) {
+    return
+  }
   
   // 清除之前的错误
   emit('error', '')
@@ -119,13 +132,13 @@ const compileAndDisplay = () => {
   const fragmentShader = createShader(gl.FRAGMENT_SHADER, props.fragmentShader)
   
   if (!vertexShader || !fragmentShader) {
-    console.error('Failed to create shaders')
+    // 错误信息已经通过createShader发出，这里不需要再处理
     return
   }
   
   const newProgram = createProgram(vertexShader, fragmentShader)
   if (!newProgram) {
-    console.error('Failed to create program')
+    // 错误信息已经通过createProgram发出，这里不需要再处理
     return
   }
   
@@ -140,9 +153,11 @@ const compileAndDisplay = () => {
   // 设置顶点属性
   if (positionBuffer) {
     const positionAttributeLocation = gl.getAttribLocation(program, 'a_position')
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
-    gl.enableVertexAttribArray(positionAttributeLocation)
-    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0)
+    if (positionAttributeLocation !== -1) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+      gl.enableVertexAttribArray(positionAttributeLocation)
+      gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0)
+    }
   }
   
   needsUpdate = false
@@ -167,8 +182,13 @@ const render = (timestamp: number) => {
     const timeLocation = gl.getUniformLocation(program, 'u_time')
     
     // 设置uniform变量
-    gl.uniform2f(resolutionLocation, canvas.width, canvas.height)
-    gl.uniform1f(timeLocation, timestamp / 1000)
+    if (resolutionLocation !== null) {
+      gl.uniform2f(resolutionLocation, canvas.width, canvas.height)
+    }
+    
+    if (timeLocation !== null) {
+      gl.uniform1f(timeLocation, timestamp / 1000)
+    }
     
     // 绘制全屏四边形
     gl.drawArrays(gl.TRIANGLES, 0, 6)
@@ -201,19 +221,37 @@ const markForUpdate = () => {
 // 监听着色器变化，但不立即更新，只标记需要更新
 watch([() => props.fragmentShader, () => props.vertexShader], () => {
   markForUpdate()
-}, { immediate: false })
+}, { immediate: true }) // 设置为立即执行以确保初始渲染
 
 onMounted(() => {
   initWebGL()
   // 初始编译
   compileAndDisplay()
   startAnimationLoop()
+  
+  // 监听canvas尺寸变化
+  const resizeObserver = new ResizeObserver(() => {
+    if (canvasRef.value) {
+      const rect = canvasRef.value.getBoundingClientRect()
+      canvasRef.value.width = rect.width
+      canvasRef.value.height = rect.height
+      markForUpdate() // 尺寸变化时标记需要更新
+    }
+  })
+  
+  if (canvasRef.value) {
+    resizeObserver.observe(canvasRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
   stopAnimationLoop()
   if (gl && program) {
     gl.deleteProgram(program)
+  }
+  
+  if (gl && positionBuffer) {
+    gl.deleteBuffer(positionBuffer)
   }
 })
 

@@ -1,12 +1,4 @@
 <template>
-    <div v-if="!codeData"></div>
-    <ShaderRenderer 
-      v-else-if="shaderCode" 
-      :fragment-shader="shaderCode.fragment" 
-      :vertex-shader="shaderCode.vertex" 
-      @error="handleShaderError"
-    />
-    <iframe v-else-if="htmlCode" ref="previewFrame" class="live-html-preview w-full h-full border-0" :data-id="uuid"></iframe>
 </template>
 
 <script setup lang="ts">

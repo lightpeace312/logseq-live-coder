@@ -1,173 +1,195 @@
 <template>
   <div id="app" v-if="initialized" class="live-shader-container min-h-[400px] min-w-[768px] flex h-full w-full relative overflow-hidden">
-    <div class="live-shader-editor-wrapper flex flex-1 border-r border-gray-600 flex-col">
-      <div class="panel-header flex items-center h-8 bg-gray-900 border-b border-gray-600 text-gray-400 px-3 gap-4">
-        <span>代码</span>
-        <select id="codeType" class="code-type-selector bg-gray-700 text-gray-200 rounded text-xs px-1 py-0.5 border-0"
-          :data-id="uuid" :value="codeType" @change="handleCodeTypeChange">
-          <option v-for="coderConfig in coderConfigList" :value="coderConfig.type">{{ coderConfig.name }}</option>
-        </select>
-
-        <!-- Shader 模式标签页 -->
-        <template v-for="coderConfig in coderConfigList">
-          <div v-if="coderConfig.type==codeType"
-            class="tabs shader-tabs flex items-center h-full text-sm border-l border-gray-600 overflow-x-auto">
-            <div v-for="fragment in coderConfig.fragments"
-              class="tab h-full px-3 cursor-pointer border-r border-gray-600 bg-gray-800 flex items-center"
-              :class="{ 'active bg-gray-700 text-gray-300': activeTab === fragment.name }"
-              @click="activeTab  = fragment.name;language=fragment.language" :data-tab="fragment.name">
-              {{ fragment.name }}
-            </div>
-          </div>
-        </template>
-        
-        <button @click="saveAndCompile" class="ml-auto text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">
-          保存并编译
-        </button>
+    <div class="live-shader-editor-wrapper flex flex-1 flex-col relative">
+      <!-- 编辑器区域 -->
+      <div class="flex-1 flex flex-col">
+        <MonacoEditor 
+          ref="monacoEditorRef"
+          v-model="fragmentShaderCode" 
+          language="glsl" 
+          class="flex-1"
+        />
       </div>
-      <!-- Shader 模式编辑器 -->
-      <CodeEditor :language="language" :name="activeTab" :key="codeType" :coder-config='coderConfigList.find(item=>item.type==codeType)'
-        v-model:code="codeData[codeType]"></CodeEditor>
-    </div>
-
-    <div class="live-shader-preview-wrapper flex flex-1 flex-col h-full">
-      <div class="panel-header flex items-center h-8 bg-gray-900 border-b border-gray-600 text-gray-400 px-3 justify-between">
-        <span>预览</span>
-        <button @click="toggleErrorPanel" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">
-          {{ isExpanded ? '隐藏错误' : '显示错误' }}
-        </button>
-      </div>
-      <div class="panel-content flex flex-1 justify-center items-center bg-gray-800 relative">
-        <Renderer 
-          :codeType="codeType" 
-          :uuid="uuid" 
-          v-if="codeData" 
-          :codeData="codeData[codeType]"
-          @error="handleRendererError"
-        >
-        </Renderer>
-      </div>
-      <div 
-        class="error-panel-container border-t border-gray-600"
-        :class="{ 'collapsed': !isExpanded }"
-        ref="errorPanelRef"
+      
+      <!-- 保存按钮 -->
+      <button 
+        @click="saveAndCompile" 
+        class="save-button absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-lg z-10"
       >
-        <div class="error-panel-header flex justify-between items-center bg-gray-900 px-3 py-1 cursor-row-resize" 
-             @mousedown="startResize">
-          <span class="text-xs text-gray-400">错误信息</span>
-          <span class="text-xs text-gray-500">{{ errorCount }} 个错误</span>
-        </div>
-        <div 
-          ref="errorDisplayRef"
-          class="live-shader-error bg-red-100 text-red-700 overflow-y-auto text-sm"
-          :class="{ 'hidden': !isExpanded }"
-          :style="{ height: errorPanelHeight + 'px' }"
-        >{{ errorContent }}</div>
+        保存并编译
+      </button>
+      
+      <!-- Shader预览浮窗 -->
+      <div 
+        ref="previewRef"
+        class="shader-preview absolute w-[320px] h-[320px] bg-gray-800 border border-gray-600 rounded shadow-lg z-10 cursor-move"
+        :style="{ 
+          top: previewPosition.y + 'px',
+          left: previewPosition.x + 'px'
+        }"
+        @mousedown="startDrag"
+      >
+        <ShaderRenderer 
+          ref="shaderRendererRef"
+          :fragment-shader="compiledFragmentShader || fragmentShaderCode" 
+          :vertex-shader="defaultVertexShader"
+          @error="handleRendererError"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CodeData, CodeFragment, CoderConfig, coderConfigList, CodeType } from './config'
-import { ref, onMounted, onUnmounted } from 'vue'
-import CodeEditor from './components/CodeEditor.vue'
-import Renderer from './components/renderer/index.vue'
+import { ref, onMounted, onUnmounted, reactive } from 'vue'
+import MonacoEditor from './components/MonacoEditor.vue'
+import ShaderRenderer from './components/renderer/ShaderRenderer.vue'
+
+// 默认的顶点着色器代码
+const defaultVertexShader = `attribute vec2 a_position;
+varying vec2 v_uv;
+
+void main() {
+    v_uv = a_position * 0.5 + 0.5;
+    gl_Position = vec4(a_position, 0.0, 1.0);
+}`
 
 // 响应式数据
-const uuid = ref('standalone')
 const initialized = ref(false)
-const codeData = ref<CodeData<CodeType> | {}>({})
-const codeType = ref<CoderConfig["type"]>(coderConfigList[0].type)
-const language = ref<CodeFragment['language']>(coderConfigList[0].fragments[0].language)
-const activeTab = ref<CodeFragment['name']>(coderConfigList[0].fragments[0].name)
+const fragmentShaderCode = ref(`precision mediump float;
+uniform float u_time;
+uniform vec2 u_resolution;
 
-// 错误面板相关
-const isExpanded = ref(false)
-const errorPanelHeight = ref(150)
-const errorCount = ref(0)
-const errorPanelRef = ref<HTMLElement | null>(null)
-const errorDisplayRef = ref<HTMLDivElement | null>(null)
-const errorContent = ref<string>('')
-let isResizing = ref(false)
-let errorTimeout: number | null = null
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+    float r = sin(uv.x * 3.14159 * 2.0 + u_time) * 0.5 + 0.5;
+    float g = sin(uv.y * 3.14159 * 4.0 + u_time) * 0.5 + 0.5;
+    float b = sin((uv.x + uv.y) * 3.14159 + u_time) * 0.5 + 0.5;
+    gl_FragColor = vec4(r, g, b, 1.0);
+}`)
+const compiledFragmentShader = ref('')
+const errorContent = ref('')
+const previewPosition = reactive({ x: 20, y: 20 })
+let errorDecorationId: string[] = []
 
-const handleCodeTypeChange = (event: Event) => {
-  codeType.value = (event.target as HTMLSelectElement).value
-  activeTab.value = coderConfigList.find(config => config.type === (event.target as HTMLSelectElement).value)?.fragments[0].name || ''
-  language.value = coderConfigList.find(config => config.type === (event.target as HTMLSelectElement).value)?.fragments[0].language || ''
-}
+// 引用
+const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | null>(null)
+const previewRef = ref<HTMLDivElement | null>(null)
+const shaderRendererRef = ref<InstanceType<typeof ShaderRenderer> | null>(null)
 
-// 切换错误面板显示/隐藏
-const toggleErrorPanel = () => {
-  isExpanded.value = !isExpanded.value
-}
+// 拖动相关变量
+let isDragging = false
+let dragOffset = { x: 0, y: 0 }
 
-// 错误面板调整大小功能
-const startResize = (e: MouseEvent) => {
-  isResizing.value = true
+// 开始拖动
+const startDrag = (e: MouseEvent) => {
+  if (!previewRef.value) return
+  
+  isDragging = true
+  const rect = previewRef.value.getBoundingClientRect()
+  dragOffset.x = e.clientX - rect.left
+  dragOffset.y = e.clientY - rect.top
+  
   e.preventDefault()
-  
-  const startY = e.clientY
-  const startHeight = errorPanelHeight.value
-  
-  const doDrag = (e: MouseEvent) => {
-    if (!isResizing.value) return
-    
-    const diff = e.clientY - startY
-    errorPanelHeight.value = Math.max(50, Math.min(400, startHeight - diff))
-  }
-  
-  const stopDrag = () => {
-    isResizing.value = false
-    document.removeEventListener('mousemove', doDrag)
-    document.removeEventListener('mouseup', stopDrag)
-  }
-  
-  document.addEventListener('mousemove', doDrag)
-  document.addEventListener('mouseup', stopDrag)
 }
 
-// 处理渲染器错误
-const handleRendererError = (error: string) => {
-  errorCount.value = 1
-  errorContent.value = `[${new Date().toLocaleTimeString()}] ${error}\n\n`
-  isExpanded.value = true
+// 拖动中
+const onDrag = (e: MouseEvent) => {
+  if (!isDragging || !previewRef.value) return
+  
+  previewPosition.x = e.clientX - dragOffset.x
+  previewPosition.y = e.clientY - dragOffset.y
+  
+  // 确保预览窗口不会移出视窗边界
+  const previewRect = previewRef.value.getBoundingClientRect()
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+  
+  if (previewPosition.x < 0) previewPosition.x = 0
+  if (previewPosition.y < 0) previewPosition.y = 0
+  if (previewPosition.x + previewRect.width > windowWidth) {
+    previewPosition.x = windowWidth - previewRect.width
+  }
+  if (previewPosition.y + previewRect.height > windowHeight) {
+    previewPosition.y = windowHeight - previewRect.height
+  }
+}
+
+// 结束拖动
+const stopDrag = () => {
+  isDragging = false
 }
 
 // 保存并编译代码
 const saveAndCompile = () => {
-  // 清除之前的错误信息
+  // 清除之前的错误标记和内容
+  clearEditorErrors()
   errorContent.value = ''
-  errorCount.value = 0
   
-  // 如果之前有延时任务，先清除
-  if (errorTimeout) {
-    clearTimeout(errorTimeout)
+  // 更新编译后的着色器代码
+  compiledFragmentShader.value = fragmentShaderCode.value
+  
+  // 强制重新编译着色器
+  if (shaderRendererRef.value) {
+    shaderRendererRef.value.markForUpdate()
   }
   
-  // 2秒后检查错误
-  errorTimeout = window.setTimeout(() => {
-    // 这里可以添加额外的错误检查逻辑
-    console.log("检查代码错误...")
-  }, 2000)
+  // 模拟同步到logseq块内容（实际项目中需要替换为真实的logseq API调用）
+  console.log("同步代码到logseq块内容:", fragmentShaderCode.value)
 }
 
-// 全局错误处理
-const handleError = (event: ErrorEvent) => {
-  errorCount.value++
-  if (event.message) {
-    const errorMessage = `[${new Date().toLocaleTimeString()}] ${event.message}\n${event.filename}:${event.lineno}:${event.colno}\n\n`
-    errorContent.value += errorMessage
-    isExpanded.value = true
+// 处理渲染器错误
+const handleRendererError = (error: string) => {
+  if (error) {
+    errorContent.value = `[${new Date().toLocaleTimeString()}] ${error}`
+    showEditorError(error)
+  } else {
+    // 清除错误
+    clearEditorErrors()
+    errorContent.value = ''
   }
 }
 
-const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-  errorCount.value++
-  const errorMessage = `[${new Date().toLocaleTimeString()}] Unhandled Promise Rejection: ${event.reason}\n\n`
-  errorContent.value += errorMessage
-  isExpanded.value = true
+// 在编辑器中显示错误
+const showEditorError = (error: string) => {
+  if (!monacoEditorRef.value || !monacoEditorRef.value.editor) return
+  
+  // 动态导入 monaco-editor
+  import('monaco-editor').then((monaco) => {
+    // 尝试从错误信息中提取行号
+    const lineMatch = error.match(/ERROR: \d+:(\d+):/) || error.match(/(\d+):(\d+)/); // GLSL 编译器常见格式
+    let lineNumber = 1;
+    if (lineMatch) {
+      lineNumber = parseInt(lineMatch[1]);
+    }
+
+    const editor = monacoEditorRef.value.editor;
+    const model = editor.getModel();
+    
+    if (model) {
+      // 清除之前的错误装饰
+      errorDecorationId = editor.deltaDecorations(errorDecorationId, [{
+        range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+        options: {
+          isWholeLine: true,
+          className: 'inline-error-line',
+          glyphMarginClassName: 'inline-error-glyph',
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          hoverMessage: { value: error }
+        }
+      }]);
+    }
+  });
+}
+
+// 清除编辑器中的错误标记
+const clearEditorErrors = () => {
+  if (!monacoEditorRef.value || !monacoEditorRef.value.editor) return
+  
+  import('monaco-editor').then((monaco) => {
+    const editor = monacoEditorRef.value.editor;
+    errorDecorationId = editor.deltaDecorations(errorDecorationId, []);
+  });
 }
 
 // 初始化函数
@@ -178,37 +200,64 @@ const init = () => {
 
 onMounted(() => {
   init()
-  window.addEventListener('error', handleError)
-  window.addEventListener('unhandledrejection', handleUnhandledRejection)
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+  
+  // 添加CSS样式用于错误显示
+  const style = document.createElement('style')
+  style.innerHTML = `
+    .inline-error-line {
+      background-color: #dc2626 !important; /* 大红色背景 */
+      color: white !important;
+      position: relative;
+    }
+    
+    .inline-error-line::after {
+      content: attr(data-error);
+      position: absolute;
+      bottom: -20px;
+      left: 0;
+      background-color: #dc2626;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+      z-index: 100;
+      white-space: nowrap;
+    }
+    
+    .inline-error-glyph {
+      background-color: #dc2626;
+      color: white;
+      mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
+      -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
+    }
+  `
+  document.head.appendChild(style)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('error', handleError)
-  window.removeEventListener('unhandledrejection', handleUnhandledRejection)
-  
-  if (errorTimeout) {
-    clearTimeout(errorTimeout)
-  }
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
 })
 </script>
 
 <style scoped>
-.error-panel-container {
-  display: flex;
-  flex-direction: column;
-  min-height: 30px;
+.save-button {
+  transition: all 0.2s ease;
 }
 
-.error-panel-container.collapsed .live-shader-error {
-  display: none !important;
+.save-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.live-shader-error {
-  min-height: 50px;
-  max-height: 400px;
-  white-space: pre-wrap;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 12px;
-  padding: 8px;
+.shader-preview {
+  transition: opacity 0.2s ease;
+}
+
+.error-panel {
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>

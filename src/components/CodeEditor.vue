@@ -1,18 +1,9 @@
 <template>
-  <div class="h-[200px] flex-1 ">
-    <template v-for="(fragment,index) in coderConfig?.fragments" :key="index">
-      <div class="flex flex-col h-full" v-show="fragment.name == name">
-        <div class="flex-1">
-          <MonacoEditor v-if="inited&&code" 
-          :default="fragment.example" v-model="code[fragment.name]"
-           :language="fragment.language" :readonly="readonly" />
-        </div>
-      </div>
-    </template>
-  </div>
 </template>
 
 <script setup lang="ts">
+// 由于我们重构了项目结构，这个组件不再需要
+// 现在直接使用MonacoEditor组件
 import { PropType, ref, watch } from 'vue'
 import MonacoEditor from './MonacoEditor.vue'
 import { CodeData, CoderConfig, CodeType } from '@/config';
