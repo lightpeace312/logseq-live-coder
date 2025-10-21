@@ -19,37 +19,30 @@ import { CodeData, CoderConfig, CodeType } from '@/config';
 
 const props = defineProps<{
   language: string,
-  name:string,
+  name: string,
   coderConfig?: CoderConfig
   readonly?: boolean
 }>()
-const code = defineModel('code', { type: Object as PropType<CodeData<CodeType>>,required:false })
-const inited  = ref(false)
+
+const code = defineModel('code', { type: Object as PropType<CodeData<CodeType>> | undefined, required: false })
+const inited = ref(false)
+let updateTimeout: number | null = null
+
+// 初始化和配置变化处理
 watch(() => props.coderConfig, (config, oldConfig) => {
-  inited.value=false
+  inited.value = false
   if (config && config !== oldConfig) {
-    code.value = Object.fromEntries(config.fragments.map((fragment) => [fragment.name, '']))
-    inited.value=true
+    if (!code.value) {
+      code.value = Object.fromEntries(
+        config.fragments.map(fragment => [fragment.name, fragment.example || ''])
+      ) as CodeData<CodeType>
+    }
+    inited.value = true
   }
 }, { immediate: true, deep: true })
-// 响应式数据
-const localCode = ref(code.value)
 
-
-// 监听外部值变化
-watch(
-  () => code.value,
-  (newValue, oldValue) => {
-    if (newValue !== oldValue) {
-      localCode.value = newValue
-    }
-  }
-)
-
-// 监听本地值变化
-watch(localCode, (newVal, oldVal) => {
-  if (newVal !== oldVal) {
-    code.value = newVal
-  }
-})
+// 监听外部值变化（父组件更新）
+watch(() => code.value, (newValue) => {
+  // 不需要特殊处理，MonacoEditor会自动响应变化
+}, { deep: true })
 </script>

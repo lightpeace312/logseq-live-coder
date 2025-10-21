@@ -22,6 +22,7 @@ const emit = defineEmits<{
 // 响应式引用
 const editorContainer = ref<HTMLDivElement | null>(null)
 let editor: any = null
+let updateTimeout: number | null = null
 
 // 默认值
 const language = props.language || 'javascript'
@@ -50,10 +51,19 @@ const initEditor = async () => {
     
   })
   emit('update:modelValue',initValue)
-  // 监听内容变化
+  // 监听内容变化，使用防抖
   editor.onDidChangeModelContent(() => {
     const value = editor.getValue()
-    emit('update:modelValue', value)
+    
+    // 清除之前的定时器
+    if (updateTimeout) {
+      clearTimeout(updateTimeout)
+    }
+    
+    // 设置新的定时器，延迟更新
+    updateTimeout = window.setTimeout(() => {
+      emit('update:modelValue', value)
+    }, 300) // 300ms 防抖延迟
   })
 }
 
@@ -84,6 +94,11 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (editor) {
     editor.dispose()
+  }
+  
+  // 清理定时器
+  if (updateTimeout) {
+    clearTimeout(updateTimeout)
   }
 })
 

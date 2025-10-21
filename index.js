@@ -1,5 +1,4 @@
 import '@logseq/libs'
-import { defaultFragmentShader } from './src/constants';
 import { getTemplate } from './src/template';
 import { initShaderEditor } from './main';
 
@@ -70,7 +69,6 @@ async function initPlugin() {
         iframe.contentWindow.postMessage({
           type: 'INIT_LIVE_CODER',
           uuid: uuid,
-          data: defaultFragmentShader
         }, '*');
       }
     }, 500);

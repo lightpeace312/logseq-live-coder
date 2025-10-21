@@ -1,5 +1,5 @@
 <template>
-  <canvas ref="canvasRef" class="max-w-full max-h-full"></canvas>
+  <canvas ref="canvasRef" class="h-[320px] min-w-[320px]"></canvas>
 </template>
 
 <script setup lang="ts">
@@ -10,27 +10,59 @@ const props = defineProps<{
   vertexShader: string
 }>()
 
+const emit = defineEmits<{
+  (e: 'error', error: string): void
+}>()
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let gl: WebGLRenderingContext | null = null
 let program: WebGLProgram | null = null
 let animationId: number | null = null
 let lastRenderTime = 0
+let needsUpdate = false
+let positionBuffer: WebGLBuffer | null = null
 
 // 初始化WebGL
 const initWebGL = () => {
   if (!canvasRef.value) return
   
   const canvas = canvasRef.value
-  gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null
+  gl = canvas.getContext('webgl') 
   
   if (!gl) {
-    console.error('Unable to initialize WebGL')
+    const errorMsg = 'Unable to initialize WebGL'
+    console.error(errorMsg)
+    emit('error', errorMsg)
     return
   }
   
   // 设置WebGL参数
   gl.clearColor(0.0, 0.0, 0.0, 1.0)
   gl.clear(gl.COLOR_BUFFER_BIT)
+  
+  // 创建顶点缓冲区
+  initBuffers()
+}
+
+// 创建顶点缓冲区
+const initBuffers = () => {
+  if (!gl) return
+  
+  // 创建位置缓冲区
+  positionBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+  
+  // 定义全屏四边形的顶点坐标
+  const positions = new Float32Array([
+    -1.0, -1.0,
+     1.0, -1.0,
+    -1.0,  1.0,
+    -1.0,  1.0,
+     1.0, -1.0,
+     1.0,  1.0
+  ])
+  
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW)
 }
 
 // 创建着色器
@@ -44,7 +76,9 @@ const createShader = (type: number, source: string) => {
   gl.compileShader(shader)
   
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compile error:', gl.getShaderInfoLog(shader))
+    const errorMsg = `Shader compile error: ${gl.getShaderInfoLog(shader)}`
+    console.error(errorMsg)
+    emit('error', errorMsg)
     gl.deleteShader(shader)
     return null
   }
@@ -64,7 +98,9 @@ const createProgram = (vertexShader: WebGLShader | null, fragmentShader: WebGLSh
   gl.linkProgram(program)
   
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error('Program link error:', gl.getProgramInfoLog(program))
+    const errorMsg = `Program link error: ${gl.getProgramInfoLog(program)}`
+    console.error(errorMsg)
+    emit('error', errorMsg)
     gl.deleteProgram(program)
     return null
   }
@@ -75,6 +111,9 @@ const createProgram = (vertexShader: WebGLShader | null, fragmentShader: WebGLSh
 // 编译和显示着色器
 const compileAndDisplay = () => {
   if (!gl) return
+  
+  // 清除之前的错误
+  emit('error', '')
   
   const vertexShader = createShader(gl.VERTEX_SHADER, props.vertexShader)
   const fragmentShader = createShader(gl.FRAGMENT_SHADER, props.fragmentShader)
@@ -97,11 +136,26 @@ const compileAndDisplay = () => {
   
   program = newProgram
   gl.useProgram(program)
+  
+  // 设置顶点属性
+  if (positionBuffer) {
+    const positionAttributeLocation = gl.getAttribLocation(program, 'a_position')
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+    gl.enableVertexAttribArray(positionAttributeLocation)
+    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0)
+  }
+  
+  needsUpdate = false
 }
 
 // 渲染函数
 const render = (timestamp: number) => {
   if (!gl || !program || !canvasRef.value) return
+  
+  // 如果需要更新，重新编译着色器
+  if (needsUpdate) {
+    compileAndDisplay()
+  }
   
   // 控制帧率，约60FPS
   if (timestamp - lastRenderTime > 16) {
@@ -139,14 +193,21 @@ const stopAnimationLoop = () => {
   }
 }
 
-// 监听着色器变化
+// 标记需要更新
+const markForUpdate = () => {
+  needsUpdate = true
+}
+
+// 监听着色器变化，但不立即更新，只标记需要更新
 watch([() => props.fragmentShader, () => props.vertexShader], () => {
-  compileAndDisplay()
-  startAnimationLoop()
-}, { immediate: true })
+  markForUpdate()
+}, { immediate: false })
 
 onMounted(() => {
   initWebGL()
+  // 初始编译
+  compileAndDisplay()
+  startAnimationLoop()
 })
 
 onBeforeUnmount(() => {
@@ -156,4 +217,9 @@ onBeforeUnmount(() => {
   }
 })
 
+// 暴露方法给父组件，用于手动触发更新
+defineExpose({
+  compileAndDisplay,
+  markForUpdate
+})
 </script>
