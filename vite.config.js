@@ -6,4 +6,14 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue(),tailwindcss()],
   base: './',
+  build: {
+    minify: false,
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name].[ext]',
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name].js'
+      }
+    }
+  },
 })

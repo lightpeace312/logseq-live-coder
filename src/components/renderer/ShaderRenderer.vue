@@ -63,8 +63,8 @@ const initBuffers = () => {
      1.0, -1.0,
     -1.0,  1.0,
     -1.0,  1.0,
-     1.0, -1.0,
-     1.0,  1.0
+    1.0, -1.0,
+    1.0,  1.0
   ])
   
   gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW)

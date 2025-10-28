@@ -11,18 +11,10 @@
         />
       </div>
       
-      <!-- 保存按钮 -->
-      <button 
-        @click="saveAndCompile" 
-        class="save-button absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-lg z-10"
-      >
-        保存并编译
-      </button>
-      
       <!-- Shader预览浮窗 -->
       <div 
         ref="previewRef"
-        class="shader-preview absolute w-[320px] h-[320px] bg-gray-800 border border-gray-600 rounded shadow-lg z-10 cursor-move"
+        class="shader-preview absolute w-[320px] h-[320px] bg-gray-800 border border-gray-600 rounded shadow-lg z-10 cursor-move resize"
         :style="{ 
           top: previewPosition.y + 'px',
           left: previewPosition.x + 'px'
@@ -41,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, onMounted, onUnmounted, reactive, watch } from 'vue'
 import MonacoEditor from './components/MonacoEditor.vue'
 import ShaderRenderer from './components/renderer/ShaderRenderer.vue'
 
@@ -81,6 +73,11 @@ const shaderRendererRef = ref<InstanceType<typeof ShaderRenderer> | null>(null)
 let isDragging = false
 let dragOffset = { x: 0, y: 0 }
 
+// 自动保存相关变量
+let autoSaveTimer: number | null = null
+let lastSavedCode: string = ''
+let hasUnsavedChanges = false
+
 // 开始拖动
 const startDrag = (e: MouseEvent) => {
   if (!previewRef.value) return
@@ -118,10 +115,35 @@ const onDrag = (e: MouseEvent) => {
 // 结束拖动
 const stopDrag = () => {
   isDragging = false
+  // 保存位置到logseq
+  savePreviewPosition()
+}
+
+// 保存预览窗口位置
+const savePreviewPosition = () => {
+  if (typeof logseq !== 'undefined') {
+    const uuid = getBlockUUID()
+    if (uuid) {
+      logseq.Editor.upsertBlockProperty(uuid, 'liveCoderPreviewPosition', { 
+        x: previewPosition.x, 
+        y: previewPosition.y 
+      }).catch(console.error)
+    }
+  } else if (window.parent !== window) {
+    // 在iframe模式下，通过postMessage与父窗口通信
+    window.parent.postMessage({
+      type: 'SAVE_PREVIEW_POSITION',
+      uuid: getBlockUUID(),
+      position: { x: previewPosition.x, y: previewPosition.y }
+    }, '*');
+  }
 }
 
 // 保存并编译代码
 const saveAndCompile = () => {
+  // 只有在有未保存更改时才保存
+  if (!hasUnsavedChanges) return
+  
   // 清除之前的错误标记和内容
   clearEditorErrors()
   errorContent.value = ''
@@ -134,8 +156,111 @@ const saveAndCompile = () => {
     shaderRendererRef.value.markForUpdate()
   }
   
-  // 模拟同步到logseq块内容（实际项目中需要替换为真实的logseq API调用）
+  // 保存代码到logseq
+  saveCodeToLogseq()
+  
+  // 更新最后保存的代码
+  lastSavedCode = fragmentShaderCode.value
+  hasUnsavedChanges = false
+  
+}
+
+// 保存代码到logseq块
+const saveCodeToLogseq = () => {
   console.log("同步代码到logseq块内容:", fragmentShaderCode.value)
+  if (typeof logseq !== 'undefined') {
+    const uuid = getBlockUUID()
+    if (uuid) {
+      logseq.Editor.upsertBlockProperty(uuid, 'liveCoderFragmentContent', fragmentShaderCode.value)
+        .catch(console.error)
+    }
+  } else if (window.parent !== window) {
+    // 在iframe模式下，通过postMessage与父窗口通信
+    window.parent.postMessage({
+      type: 'SAVE_CONTENT',
+      uuid: getBlockUUID(),
+      content: fragmentShaderCode.value
+    }, '*');
+  }
+}
+
+// 获取块UUID
+const getBlockUUID = () => {
+  // 在iframe模式下，从URL参数获取uuid
+  if (window.parent !== window) {
+    const urlParams = new URLSearchParams(window.location.search)
+    return urlParams.get('uuid')
+  }
+  
+  // 在独立模式下，使用默认uuid
+  return 'standalone'
+}
+
+// 加载代码和状态
+const loadContentAndState = async () => {
+  if (typeof logseq !== 'undefined') {
+    const uuid = getBlockUUID()
+    if (uuid) {
+      try {
+        // 加载代码内容
+        const block = await logseq.Editor.getBlock(uuid)
+        if (block && block.properties) {
+          // 加载代码
+          if (block.properties.liveCoderFragmentContent) {
+            fragmentShaderCode.value = block.properties.liveCoderFragmentContent
+            lastSavedCode = fragmentShaderCode.value
+          }
+          
+          // 加载预览位置
+          if (block.properties.liveCoderPreviewPosition) {
+            previewPosition.x = block.properties.liveCoderPreviewPosition.x
+            previewPosition.y = block.properties.liveCoderPreviewPosition.y
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load content and state:', error)
+      }
+    }
+  } else if (window.parent !== window) {
+    // 在iframe模式下，通过postMessage与父窗口通信加载内容
+    return new Promise((resolve) => {
+      // 监听来自父窗口的消息
+      const messageHandler = (event: MessageEvent) => {
+        if (event.data && event.data.type === 'CONTENT_AND_STATE_LOADED' && event.data.uuid === getBlockUUID()) {
+          // 加载代码
+          if (event.data.content.code) {
+            fragmentShaderCode.value = event.data.content.code
+            lastSavedCode = fragmentShaderCode.value
+          }
+          
+          // 加载预览位置
+          if (event.data.content.position) {
+            previewPosition.x = event.data.content.position.x
+            previewPosition.y = event.data.content.position.y
+          }
+          
+          // 移除事件监听器
+          window.removeEventListener('message', messageHandler)
+          resolve(null)
+        }
+      };
+      
+      // 添加事件监听器
+      window.addEventListener('message', messageHandler)
+      
+      // 请求加载内容和状态
+      window.parent.postMessage({
+        type: 'LOAD_CONTENT_AND_STATE',
+        uuid: getBlockUUID()
+      }, '*');
+      
+      // 设置超时
+      setTimeout(() => {
+        window.removeEventListener('message', messageHandler)
+        resolve(null)
+      }, 1000)
+    })
+  }
 }
 
 // 处理渲染器错误
@@ -193,65 +318,100 @@ const clearEditorErrors = () => {
 }
 
 // 初始化函数
-const init = () => {
+const init = async () => {
+  // 加载内容和状态
+  await loadContentAndState()
+  
   initialized.value = true
   console.log('Live Coder Vue App initialized')
 }
 
-onMounted(() => {
-  init()
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
+// 启动自动保存定时器
+const startAutoSave = () => {
+  // 清除已有的定时器
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+  }
   
-  // 添加CSS样式用于错误显示
-  const style = document.createElement('style')
-  style.innerHTML = `
-    .inline-error-line {
-      background-color: #dc2626 !important; /* 大红色背景 */
-      color: white !important;
-      position: relative;
-    }
+  // 每2秒检查并自动保存（只有在有更改时才保存）
+  autoSaveTimer = window.setInterval(() => {
+    saveAndCompile()
+  }, 2000)
+}
+
+onMounted(() => {
+  init().then(() => {
+    document.addEventListener('mousemove', onDrag)
+    document.addEventListener('mouseup', stopDrag)
     
-    .inline-error-line::after {
-      content: attr(data-error);
-      position: absolute;
-      bottom: -20px;
-      left: 0;
-      background-color: #dc2626;
-      color: white;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 12px;
-      z-index: 100;
-      white-space: nowrap;
-    }
+    // 启动自动保存
+    startAutoSave()
     
-    .inline-error-glyph {
-      background-color: #dc2626;
-      color: white;
-      mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
-      -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
-    }
-  `
-  document.head.appendChild(style)
+    // 添加CSS样式用于错误显示
+    const style = document.createElement('style')
+    style.innerHTML = `
+      .inline-error-line {
+        background-color: #dc2626 !important; /* 大红色背景 */
+        color: white !important;
+        position: relative;
+      }
+      
+      .inline-error-line::after {
+        content: attr(data-error);
+        position: absolute;
+        bottom: -20px;
+        left: 0;
+        background-color: #dc2626;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+        z-index: 100;
+        white-space: nowrap;
+      }
+      
+      .inline-error-glyph {
+        background-color: #dc2626;
+        color: white;
+        mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
+        -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M8 1C4.1 1 1 4.1 1 8s3.1 7 7 7 7-3.1 7-7-3.1-7-7-7zm3.5 10.5L8 8l-3.5 3.5-1-1L7 7 3.5 3.5l1-1L8 6l3.5-3.5 1 1L9 7l3.5 3.5-1 1z'/></svg>") no-repeat 50% 50%;
+      }
+      
+      .resize {
+        overflow: auto;
+        resize: both;
+      }
+    `
+    document.head.appendChild(style)
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
+  
+  // 清除自动保存定时器
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+  }
+  
+  // 在卸载前保存一次
+  saveAndCompile()
 })
+
+// 监听代码变化
+watch(fragmentShaderCode, (newCode) => {
+  // 检查是否有未保存的更改
+  hasUnsavedChanges = newCode !== lastSavedCode
+  
+  // 代码变化时立即标记着色器需要更新，但不立即编译
+  if (shaderRendererRef.value) {
+    shaderRendererRef.value.markForUpdate()
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>
-.save-button {
-  transition: all 0.2s ease;
-}
-
-.save-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
 .shader-preview {
   transition: opacity 0.2s ease;
 }

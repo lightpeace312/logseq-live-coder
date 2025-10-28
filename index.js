@@ -1,6 +1,4 @@
 import '@logseq/libs'
-import { getTemplate } from './src/template';
-import { initShaderEditor } from './main';
 
 /**
  * 检查是否在Logseq环境中运行
@@ -53,14 +51,13 @@ async function initPlugin() {
       slot,
       reset: true,
       template: `
-          <iframe src="${window.location.origin}${window.location.pathname}" 
+          <iframe src="${window.location.origin}${window.location.pathname}?uuid=${uuid}" 
           style="min-width: 768px; min-height: 400px; border: none;margin:0 !important;resize:both;" 
           data-uuid="${uuid}"
           id="live-coder-iframe-${uuid}">
           </iframe>
           `,
-        });
-        // src="${logseq.base.getAssetsRoot()}/timestamp-plugin-iframe/index.html"
+    });
 
     // 向iframe发送初始化消息
     setTimeout(() => {
@@ -73,84 +70,75 @@ async function initPlugin() {
       }
     }, 500);
   });
-}
-
-/**
- * 初始化iframe内的应用
- */
-function initIframeApp() {
-  console.log('Initializing iframe app');
   
-  // 监听来自父窗口的消息
+  // 监听来自iframe的消息
   window.addEventListener('message', async (event) => {
-    if (event.data && event.data.type === 'INIT_LIVE_CODER') {
-      const { uuid, data } = event.data;
-      
-      // 初始化应用
-      const app = document.getElementById('app');
-      if (app) {
-        // 注入样式
-        
-        // 设置内容
-        app.innerHTML = getTemplate(uuid, data || defaultFragmentShader);
-        
-        // 初始化编辑器
-        const container = document.querySelector('.live-shader-container');
-        if (container) {
-          setTimeout(() => {
-            try {
-              initShaderEditor(container);
-            } catch (e) {
-              console.error('Failed to initialize editor:', e);
-            }
-          }, 100);
+    const data = event.data;
+    if (!data || !data.type) return;
+    
+    console.log('Received message from iframe:', data);
+    
+    switch (data.type) {
+      case 'SAVE_CONTENT':
+        // 保存内容到logseq
+        if (typeof logseq !== 'undefined' && data.uuid && 'content' in data) {
+          try {
+            console.log('Saving content to Logseq block:', data.uuid, data.content);
+            await logseq.Editor.upsertBlockProperty(data.uuid, 'liveCoderFragmentContent', data.content);
+            console.log('Content saved successfully');
+          } catch (error) {
+            console.error('Failed to save content:', error);
+          }
         }
-      }
+        break;
+        
+      case 'SAVE_PREVIEW_POSITION':
+        // 保存预览位置到logseq
+        if (typeof logseq !== 'undefined' && data.uuid && data.position) {
+          try {
+            console.log('Saving preview position to Logseq block:', data.uuid, data.position);
+            await logseq.Editor.upsertBlockProperty(data.uuid, 'liveCoderPreviewPosition', data.position);
+            console.log('Preview position saved successfully');
+          } catch (error) {
+            console.error('Failed to save preview position:', error);
+          }
+        }
+        break;
+        
+      case 'LOAD_CONTENT_AND_STATE':
+        // 加载内容和状态并发送回iframe
+        if (typeof logseq !== 'undefined' && data.uuid) {
+          try {
+            console.log('Loading content and state for block:', data.uuid);
+            const block = await logseq.Editor.getBlock(data.uuid);
+            console.log('Block data:', block);
+            
+            const content = {
+              code: block && block.properties && block.properties.liveCoderFragmentContent 
+                ? block.properties.liveCoderFragmentContent 
+                : '',
+              position: block && block.properties && block.properties.liveCoderPreviewPosition 
+                ? block.properties.liveCoderPreviewPosition 
+                : { x: 20, y: 20 }
+            };
+              
+            console.log('Sending content and state back to iframe:', content);
+              
+            // 发送回iframe
+            event.source.postMessage({
+              type: 'CONTENT_AND_STATE_LOADED',
+              content: content,
+              uuid: data.uuid
+            }, event.origin);
+          } catch (error) {
+            console.error('Failed to load content and state:', error);
+          }
+        }
+        break;
     }
   });
-
-  // 如果是直接访问（独立模式）
-  if (window.location === window.parent.location) {
-    initStandaloneMode();
-  }
 }
 
-/**
- * 初始化独立运行模式（用于开发预览）
- */
-function initStandaloneMode() {
-  console.log('Running in standalone mode');
-  
-  // 等待DOM加载完成
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initUI);
-  } else {
-    initUI();
-  }
-  
-  function initUI() {
-    const app = document.getElementById('app');
-    if (app) {
-      // 模拟 uuid
-      const uuid = 'standalone';
-      // 注入样式
-      
-      app.innerHTML = getTemplate(uuid, defaultFragmentShader);
-      
-      const container = document.querySelector('.live-shader-container');
-      if (container) {
-        // 延迟初始化以确保DOM完全加载
-        setTimeout(() => {
-          try {
-            initShaderEditor(container);
-          } catch (e) {
-            console.error('Failed to initialize standalone editor:', e);
-          }
-        }, 100);
-      }
-    }
-  }
-}
 
 /**
  * 主函数
@@ -159,9 +147,6 @@ async function main() {
   if (isLogseqEnvironment()) {
     // 在Logseq环境中运行
     await initPlugin();
-  } else {
-    // 在iframe或浏览器环境中运行
-    initIframeApp();
   }
 }
 
